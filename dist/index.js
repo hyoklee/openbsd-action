@@ -432,7 +432,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
-var _a;
+var _a, _b;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.toKind = exports.Architecture = exports.Kind = void 0;
 const hypervisor = __importStar(__webpack_require__(4288));
@@ -452,8 +452,12 @@ class Architecture {
         this.host = host;
     }
     static for(kind, host, operating_system) {
-        if (kind == Kind.x86_64 && operating_system.is(openbsd_1.default))
-            return new Architecture.X86_64OpenBsd(kind, host);
+        if (operating_system.is(openbsd_1.default)) {
+            if (kind == Kind.x86_64)
+                return new Architecture.X86_64OpenBsd(kind, host);
+            else if (kind == Kind.arm64)
+                return new Architecture.Arm64OpenBsd(kind, host);
+        }
         return new ((0, utility_1.getOrThrow)(Architecture.architectureMap, kind))(kind, host);
     }
     get networkDevice() {
@@ -494,6 +498,9 @@ Architecture.Arm64 = class extends Architecture {
     get hypervisor() {
         return new hypervisor.Qemu();
     }
+    get efiHypervisor() {
+        return new hypervisor.QemuEfi();
+    }
 };
 Architecture.X86_64 = class extends Architecture {
     get name() {
@@ -517,12 +524,26 @@ Architecture.X86_64 = class extends Architecture {
     get hypervisor() {
         return this.host.hypervisor;
     }
+    get efiHypervisor() {
+        return this.host.efiHypervisor;
+    }
 };
 Architecture.X86_64OpenBsd = class extends _a.X86_64 {
     get networkDevice() {
         return 'e1000';
     }
 };
+Architecture.Arm64OpenBsd = (_b = class extends _a.Arm64 {
+        get efiHypervisor() {
+            return new Architecture.Arm64OpenBsd.QemuEfi();
+        }
+    },
+    _b.QemuEfi = class extends hypervisor.QemuEfi {
+        get firmwareFile() {
+            return `${this.firmwareDirectory}/linaro_uefi.fd`;
+        }
+    },
+    _b);
 Architecture.architectureMap = new Map([
     [Kind.arm64, Architecture.Arm64],
     [Kind.x86_64, Architecture.X86_64]
@@ -971,7 +992,7 @@ let FreeBsd = class FreeBsd extends os.OperatingSystem {
         super(arch, version);
     }
     get hypervisorUrl() {
-        return host_1.host.hypervisor.getResourceUrl(this.architecture);
+        return this.architecture.hypervisor.getResourceUrl(this.architecture);
     }
     get ssHostPort() {
         return this.architecture.hypervisor.sshPort;
@@ -1001,7 +1022,7 @@ let FreeBsd = class FreeBsd extends os.OperatingSystem {
         if (this.architecture.kind !== architecture.Kind.x86_64) {
             throw Error(`Not implemented: FreeBSD guests are not implemented on ${this.architecture.name}`);
         }
-        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), host_1.host.hypervisor.firmwareFile), 
+        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), this.architecture.hypervisor.firmwareFile), 
             // qemu
             cpu: this.architecture.cpu, accelerator: this.architecture.accelerator, machineType: this.architecture.machineType, 
             // xhyve
@@ -1170,7 +1191,6 @@ const core = __importStar(__webpack_require__(2186));
 const architecture = __importStar(__webpack_require__(4019));
 const action = __importStar(__webpack_require__(6072));
 const factory_1 = __webpack_require__(133);
-const host_1 = __webpack_require__(8215);
 const os = __importStar(__webpack_require__(9385));
 const version_1 = __importDefault(__webpack_require__(8217));
 const qemu_1 = __webpack_require__(1526);
@@ -1198,7 +1218,7 @@ let NetBsd = class NetBsd extends qemu_1.Qemu {
         if (this.architecture.kind !== architecture.Kind.x86_64) {
             throw Error(`Not implemented: NetBSD guests are not implemented on ${this.architecture.name}`);
         }
-        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), host_1.host.hypervisor.firmwareFile), 
+        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), this.architecture.hypervisor.firmwareFile), 
             // qemu
             cpu: this.architecture.cpu, accelerator: this.architecture.accelerator, machineType: this.architecture.machineType, 
             // xhyve
@@ -1304,10 +1324,10 @@ let OpenBsd = class OpenBsd extends os.OperatingSystem {
         super(arch, version);
     }
     get hypervisorUrl() {
-        return host_1.host.hypervisor.getResourceUrl(this.architecture);
+        return this.architecture.hypervisor.getResourceUrl(this.architecture);
     }
     get ssHostPort() {
-        return host_1.host.hypervisor.sshPort;
+        return this.architecture.hypervisor.sshPort;
     }
     get actionImplementationKind() {
         if (this.architecture.kind === architecture.Kind.x86_64)
@@ -1325,7 +1345,7 @@ let OpenBsd = class OpenBsd extends os.OperatingSystem {
     }
     createVirtualMachine(hypervisorDirectory, resourcesDirectory, firmwareDirectory, configuration) {
         core.debug('Creating OpenBSD VM');
-        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), host_1.host.efiHypervisor.firmwareFile), 
+        const config = Object.assign(Object.assign({}, configuration), { ssHostPort: this.ssHostPort, firmware: path.join(firmwareDirectory.toString(), this.architecture.efiHypervisor.firmwareFile), 
             // qemu
             cpu: this.architecture.cpu, accelerator: this.architecture.accelerator, machineType: this.architecture.machineType, 
             // xhyve
@@ -1874,11 +1894,11 @@ exports.getImplementation = getImplementation;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const version = {
     operating_system: {
-        freebsd: 'v0.2.0',
+        freebsd: 'v0.3.0',
         netbsd: 'v0.0.1',
         openbsd: 'v0.5.0'
     },
-    resources: 'v0.6.0'
+    resources: 'v0.7.0'
 };
 exports.default = version;
 //# sourceMappingURL=version.js.map
